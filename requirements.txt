@@ -1,0 +1,6 @@
+ultralytics>=8.4
+yt-dlp
+opencv-python
+requests
+# torch and torchvision must be a matching pair (for example torch 2.11 with torchvision 0.26, CPU build):
+#   pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cpu
