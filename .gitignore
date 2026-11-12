@@ -4,3 +4,7 @@ weights/
 samples/
 __pycache__/
 *.pt
+
+# Server-only files
+.env
+logs/

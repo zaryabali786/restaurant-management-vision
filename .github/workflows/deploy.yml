@@ -1,0 +1,61 @@
+name: Deploy WhatsMeal camera worker to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-whatsmeal-vision
+  cancel-in-progress: false
+
+# The worker runs on the VPS in /var/www/whatsmeal-vision as pm2 "whatsmeal-vision".
+# It can only watch cameras the VPS can reach: public RTSP/HTTP addresses or live links, not 192.168.x.x ones.
+# Python packages (.venv), the model files and .env (the worker key) stay on the VPS.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Every file compiles
+        run: python -m compileall -q .
+
+      - name: Copy the code and restart on the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          APP_DIR=/var/www/whatsmeal-vision
+          KEY="$RUNNER_TEMP/deploy_key"
+          install -m 600 /dev/null "$KEY"
+          printf '%s\n' "$VPS_SSH_KEY" > "$KEY"
+          trap 'rm -f "$KEY"' EXIT
+          SSH="ssh -i $KEY -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15"
+
+          $SSH "$VPS_USER@$VPS_HOST" "mkdir -p '$APP_DIR/logs' '$APP_DIR/models'"
+          rsync -az \
+            --exclude '.git' --exclude '.github' --exclude '.venv' --exclude 'models' \
+            --exclude '.env' --exclude 'logs' --exclude '__pycache__' --exclude 'samples' \
+            -e "$SSH" ./ "$VPS_USER@$VPS_HOST:$APP_DIR/"
+
+          $SSH "$VPS_USER@$VPS_HOST" "APP_DIR='$APP_DIR' bash -s" <<'REMOTE'
+          set -e
+          cd "$APP_DIR"
+          chmod +x run.sh
+          if [ ! -x .venv/bin/python ]; then
+            echo "No Python environment in $APP_DIR/.venv yet (the one-time setup in README.md). Code copied, worker not started."
+            exit 0
+          fi
+          .venv/bin/pip install -q -r requirements.txt
+          pm2 delete whatsmeal-vision >/dev/null 2>&1 || true
+          pm2 start ecosystem.config.cjs
+          pm2 save
+          sleep 8
+          pm2 logs whatsmeal-vision --lines 15 --nostream || true
+          REMOTE

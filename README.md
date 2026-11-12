@@ -62,3 +62,13 @@ A GPU makes it faster, not more accurate.
 - The cap check is zero-shot (no training on this kitchen). On the sample kitchen it raised no false alarm, and on bare
   heads it was sure only about one time in five — it under-reports rather than accuse. Verdicts marked in the app
   (Correct / Wrong) are the data a trained check would be built from.
+
+## On the WhatsMeal VPS
+
+The worker also runs on the VPS, in `/var/www/whatsmeal-vision`, as the pm2 process `whatsmeal-vision` (`run.sh`, `ecosystem.config.cjs`). A push to `main` copies the code there and restarts it (`.github/workflows/deploy.yml`; repository secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`).
+
+- Its settings are in `/var/www/whatsmeal-vision/.env`, never in git: `VISION_KEY=vk_...` (from the Cameras page) and, if wanted, `VISION_API`, `VISION_PROFILE` (default `fast`), `VISION_THREADS` (default 2).
+- One key is one restaurant. With no key the process idles and says so in its log.
+- From the VPS it can only reach cameras with a public address (RTSP/HTTP/HTTPS or a live link). A camera on `192.168.x.x` inside a restaurant needs port forwarding or a VPN, or the worker on a PC there.
+- The VPS has 4 cores shared with three web apps and a database: the `fast` profile on 2 threads handles about 4 to 6 cameras at the default intervals.
+- `pm2 logs whatsmeal-vision --lines 50` shows what it is doing.

@@ -20,6 +20,7 @@ To try a camera with no app at all (prints what it would send, and saves marked-
 """
 import argparse
 import base64
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -223,8 +224,8 @@ def watch(camera, api, intervals, stop, save_marked=False, profile="accurate"):
 
 def main():
     parser = argparse.ArgumentParser(description="Watches the restaurant's cameras and reports to the app.")
-    parser.add_argument("--api", default="http://localhost:4000/api")
-    parser.add_argument("--key", default="")
+    parser.add_argument("--api", default=os.environ.get("VISION_API", "http://localhost:4000/api"), help="the app's API address (or set VISION_API)")
+    parser.add_argument("--key", default=os.environ.get("VISION_KEY", ""), help="the worker key from the Cameras page (or set VISION_KEY, so it is not on the command line)")
     parser.add_argument("--profile", choices=sorted(PROFILES), default="accurate", help="accurate (default) or fast: quicker, a little less sharp-eyed")
     parser.add_argument("--dining-interval", type=float, default=INTERVALS["dining"], help="seconds between looks at a dining camera")
     parser.add_argument("--kitchen-interval", type=float, default=INTERVALS["kitchen"], help="seconds between looks at a kitchen camera")
