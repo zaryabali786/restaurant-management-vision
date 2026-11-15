@@ -8,3 +8,5 @@ __pycache__/
 # Server-only files
 .env
 logs/
+
+live-key.txt

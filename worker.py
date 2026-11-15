@@ -230,8 +230,9 @@ def watch(camera, api, intervals, stop, save_marked=False, profile="accurate"):
             misses = 0
             job.step(frame)
         except Exception as error:  # one bad frame or a dropped connection must not end the watch
-            print(f"[worker] {camera.get('name')}: {error.__class__.__name__}: {error}")
-            stop.wait(5)
+            print(f"[worker] {camera.get('name')}: {error.__class__.__name__}: {str(error)[:200]}")
+            # Asking YouTube again every few seconds once it has said "not a bot" only makes the refusal last; ask every 2 minutes.
+            stop.wait(120 if "not a bot" in str(error) else 5)
         stop.wait(max(0.0, interval - (time.time() - started)))
     stream.close()
 

@@ -43,6 +43,11 @@ def resolve(url: str, height: int = 720) -> str:
     long = side * 2
     pick = f"[width<={long}][height<={long}][vcodec!=none]"
     options = {"quiet": True, "no_warnings": True, "format": f"best{pick}/bestvideo{pick}/best", "format_sort": [f"res:{side}"]}
+    # YouTube refuses many datacenter (VPS) addresses with "Sign in to confirm you're not a bot". A cookies file exported from a
+    # signed-in browser (VISION_YT_COOKIES=/path/cookies.txt) is what it then accepts. Not needed on a home or restaurant PC.
+    cookies = os.environ.get("VISION_YT_COOKIES", "").strip()
+    if cookies and os.path.exists(cookies):
+        options["cookiefile"] = cookies
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False)
     return info.get("url") or info["formats"][-1]["url"]
