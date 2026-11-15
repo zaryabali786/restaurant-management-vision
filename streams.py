@@ -19,7 +19,9 @@ from urllib.parse import urlsplit, urlunsplit
 
 # RTSP over TCP: on Wi-Fi (and through most routers) UDP loses packets and the picture never starts. ffmpeg reads this
 # when a stream is opened, so it is set before anything opens one.
-os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
+# A stream that goes quiet (the network drops, YouTube stops the feed) must not leave ffmpeg waiting for ever: with no
+# time limit one read can hang, and the camera then silently stops being watched. 15 s (in microseconds) is allowed.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|timeout;15000000|rw_timeout;15000000|reconnect;1|reconnect_streamed;1|reconnect_delay_max;5")
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
@@ -27,7 +29,7 @@ import requests  # noqa: E402
 
 YOUTUBE = re.compile(r"(youtube\.com|youtu\.be)", re.I)
 STILL_TYPES = ("image/jpeg", "image/jpg", "image/png", "image/webp", "image/bmp")
-REOPEN_AFTER = 3 * 3600
+REOPEN_AFTER = 2 * 3600  # a YouTube stream address stops working after a few hours; get a fresh one before that
 
 
 def resolve(url: str, height: int = 720) -> str:
@@ -125,6 +127,9 @@ class Camera:
             self.capture.release()
         self.capture = cv2.VideoCapture(resolve(self.url, self.height), cv2.CAP_FFMPEG)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        for prop in ("CAP_PROP_OPEN_TIMEOUT_MSEC", "CAP_PROP_READ_TIMEOUT_MSEC"):
+            if hasattr(cv2, prop):
+                self.capture.set(getattr(cv2, prop), 15000)
         self.opened_at = time.time()
 
     def read(self, skip: int = 0):

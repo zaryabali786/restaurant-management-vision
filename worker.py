@@ -202,18 +202,32 @@ class KitchenJob:
 def watch(camera, api, intervals, stop, save_marked=False, profile="accurate"):
     """One camera, until told to stop. A camera that drops is reopened; one that will not open is tried again each minute."""
     interval = intervals["kitchen" if camera["kind"] == "kitchen" else "dining"]
-    job = (KitchenJob if camera["kind"] == "kitchen" else DiningJob)(camera, api, interval, save_marked, profile)
+    job = None
+    while job is None and not stop.is_set():  # a model that fails to load is retried, never given up on
+        try:
+            job = (KitchenJob if camera["kind"] == "kitchen" else DiningJob)(camera, api, interval, save_marked, profile)
+        except Exception as error:
+            print(f"[worker] {camera.get('name')}: could not start ({error.__class__.__name__}: {error}); retrying in 30 s")
+            stop.wait(30)
+    if job is None:
+        return
     stream = Camera(camera["url"])
     camera["_job"] = job
     print(f"[worker] watching {camera.get('name') or camera['id']} ({camera['kind']}): a look every {interval:g}s, {profile}")
+    misses = 0
     while not stop.is_set():
         started = time.time()
+        camera["_alive"] = started  # the supervisor in main() restarts a watch that stops ticking (a hung connection)
         try:
             frame = stream.read(skip=int(interval * 25))  # jump to the present: a live stream keeps buffering while a frame is thought about
             if frame is None:
-                print(f"[worker] {camera.get('name')}: no picture; trying again in a minute")
-                stop.wait(60)
+                misses += 1
+                # The stream dropped: reopen it at once and keep trying (a few seconds apart, then every 30 s), for as long as the camera is on.
+                print(f"[worker] {camera.get('name')}: no picture; reopening")
+                stream.close()
+                stop.wait(min(30, 3 * misses))
                 continue
+            misses = 0
             job.step(frame)
         except Exception as error:  # one bad frame or a dropped connection must not end the watch
             print(f"[worker] {camera.get('name')}: {error.__class__.__name__}: {error}")
@@ -260,6 +274,14 @@ def main():
                     print(f"[worker] the app did not answer ({error}); trying again")
             for camera in cameras:
                 running = threads.get(camera["id"])
+                # A watch that has not come round for 3 minutes is hung inside a dead connection: let it go and start a fresh one.
+                if running and not running["thread"].is_alive() and not args.dry:
+                    print(f"[worker] {camera.get('name')}: its watch had ended; starting it again")
+                    running = None
+                if running and not args.dry and time.time() - running["camera"].get("_alive", time.time()) > 180:
+                    print(f"[worker] {camera.get('name')}: the watch hung; restarting it")
+                    running["stop"].set()
+                    running = None
                 if running and running["url"] == camera["url"] and running["kind"] == camera["kind"]:
                     job = running["camera"].get("_job")
                     # Zones redrawn in the app reach the running watch. (A dry run has none to fetch: it keeps the ones it found.)
